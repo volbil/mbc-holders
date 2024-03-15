@@ -1,0 +1,3 @@
+[default]
+    [default.database]
+    endpoint = "postgresql+asyncpg://user:password@localhost:5432/boilerplate"
