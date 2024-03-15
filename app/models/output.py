@@ -8,8 +8,8 @@ from .base import Base
 class Output(Base):
     __tablename__ = "service_outputs"
 
+    shortcut: Mapped[str] = mapped_column(String(70), index=True, unique=True)
     blockhash: Mapped[str] = mapped_column(String(64), index=True)
-    shortcut: Mapped[str] = mapped_column(String(70), index=True)
     address: Mapped[str] = mapped_column(String(70), index=True)
     txid: Mapped[str] = mapped_column(String(64), index=True)
     amount: Mapped[Numeric] = mapped_column(Numeric(28, 8))
