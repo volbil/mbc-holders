@@ -1,11 +1,9 @@
+from sqlalchemy import select, update, delete, desc
+from app.parser import make_request, parse_block
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, desc
 from app.database import sessionmanager
 from app.settings import get_settings
-from app.parser import make_request
-from datetime import datetime
 from decimal import Decimal
-from pprint import pprint
 import asyncio
 
 from app.models import (
@@ -15,175 +13,6 @@ from app.models import (
     Block,
     Input,
 )
-
-
-async def parse_outputs(transaction_data: dict):
-    outputs = []
-
-    for vout in transaction_data["vout"]:
-        if "address" not in vout["scriptPubKey"]:
-            continue
-
-        outputs.append(
-            {
-                "shortcut": transaction_data["txid"] + ":" + str(vout["n"]),
-                "blockhash": transaction_data["blockhash"],
-                "address": vout["scriptPubKey"]["address"],
-                "txid": transaction_data["txid"],
-                "amount": vout["value"],
-                "index": vout["n"],
-                "spent": False,
-            }
-        )
-
-    return outputs
-
-
-async def parse_inputs(transaction_data: dict):
-    inputs = []
-
-    for vin in transaction_data["vin"]:
-        if "coinbase" in vin:
-            continue
-
-        inputs.append(
-            {
-                "shortcut": vin["txid"] + ":" + str(vin["vout"]),
-                "blockhash": transaction_data["blockhash"],
-                "index": vin["vout"],
-                "txid": vin["txid"],
-            }
-        )
-
-    return inputs
-
-
-async def parse_transactions(txids: list[str]):
-    settings = get_settings()
-
-    transactions_result = await make_request(
-        settings.backend.node,
-        [
-            {
-                "id": f"tx-{txid}",
-                "method": "getrawtransaction",
-                "params": [txid, True],
-            }
-            for txid in txids
-        ],
-    )
-
-    transactions = []
-    outputs = []
-    inputs = []
-
-    for transaction_result in transactions_result:
-        transaction_data = transaction_result["result"]
-
-        transactions.append(
-            {
-                "created": datetime.fromtimestamp(transaction_data["time"]),
-                "blockhash": transaction_data["blockhash"],
-                "timestamp": transaction_data["time"],
-                "txid": transaction_data["txid"],
-            }
-        )
-
-        outputs += await parse_outputs(transaction_data)
-
-        inputs += await parse_inputs(transaction_data)
-
-    input_transactions_result = await make_request(
-        settings.backend.node,
-        [
-            {
-                "id": f"input-tx-{txid}",
-                "method": "getrawtransaction",
-                "params": [txid, True],
-            }
-            for txid in list(set([vin["txid"] for vin in inputs]))
-        ],
-    )
-
-    input_outputs = {}
-
-    for transaction_result in input_transactions_result:
-        transaction_data = transaction_result["result"]
-        vin_vouts = await parse_outputs(transaction_data)
-
-        for vout in vin_vouts:
-            input_outputs[vout["shortcut"]] = vout
-
-    movements = {}
-
-    for output in outputs:
-        if output["address"] not in movements:
-            movements[output["address"]] = 0
-
-        movements[output["address"]] += output["amount"]
-
-    for input in inputs:
-        input_output = input_outputs[input["shortcut"]]
-
-        if input_output["address"] not in movements:
-            movements[input_output["address"]] = 0
-
-        movements[input_output["address"]] -= input_output["amount"]
-
-    movements = {key: value for key, value in movements.items() if value != 0.0}
-
-    return transactions, outputs, inputs, movements
-
-
-async def parse_block(height: int):
-    settings = get_settings()
-
-    result = {}
-
-    block_hash_result = await make_request(
-        settings.backend.node,
-        {
-            "id": f"blockhash-#{height}",
-            "method": "getblockhash",
-            "params": [height],
-        },
-    )
-
-    block_hash = block_hash_result["result"]
-
-    block_data_result = await make_request(
-        settings.backend.node,
-        {
-            "id": f"block-#{block_hash}",
-            "method": "getblock",
-            "params": [block_hash],
-        },
-    )
-
-    block_data = block_data_result["result"]
-
-    transactions, outputs, inputs, movements = await parse_transactions(
-        block_data["tx"]
-    )
-
-    result["transactions"] = transactions
-    result["outputs"] = outputs
-    result["inputs"] = inputs
-    result["block"] = {
-        "prev_blockhash": block_data.get("previousblockhash", None),
-        "created": datetime.fromtimestamp(block_data["time"]),
-        "transactions": block_data["tx"],
-        "blockhash": block_data["hash"],
-        "timestamp": block_data["time"],
-        "height": block_data["height"],
-        "movements": movements,
-    }
-
-    return result
-
-
-async def get_block_by_height(session: AsyncSession, height: int):
-    return await session.scalar(select(Block).filter(Block.height == height))
 
 
 async def process_block(session: AsyncSession, data: dict):
@@ -205,7 +34,7 @@ async def process_block(session: AsyncSession, data: dict):
     # Add new inputs to the session and collect spent output shortcuts
     input_shortcuts = []
     for input_data in data["inputs"]:
-        input_shortcuts = [input_data["shortcut"]]
+        input_shortcuts.append(input_data["shortcut"])
         session.add(Input(**input_data))
 
     # Mark outputs used in inputs as spent
@@ -235,6 +64,46 @@ async def process_block(session: AsyncSession, data: dict):
     return block
 
 
+async def process_reorg(session: AsyncSession, block: Block):
+    reorg_height = block.height
+    movements = block.movements
+    movement_addresses = list(movements.keys())
+
+    await session.execute(
+        delete(Output).filter(Output.blockhash == block.blockhash)
+    )
+
+    await session.execute(
+        delete(Input).filter(Input.blockhash == block.blockhash)
+    )
+
+    await session.execute(
+        delete(Transaction).filter(Transaction.blockhash == block.blockhash)
+    )
+
+    await session.execute(
+        delete(Block).filter(Block.blockhash == block.blockhash)
+    )
+
+    # Get addresses from database
+    cache = await session.scalars(
+        select(Address).filter(Address.address.in_(movement_addresses))
+    )
+
+    addresses_cache = {entry.address: entry for entry in cache}
+
+    for raw_address in movement_addresses:
+        address = addresses_cache[raw_address]
+        address.balance -= Decimal(movements[address.address])
+        session.add(address)
+
+    new_latest = await session.scalar(
+        select(Block).filter(Block.height == reorg_height - 1)
+    )
+
+    return new_latest
+
+
 async def sync_chain():
     settings = get_settings()
 
@@ -242,7 +111,7 @@ async def sync_chain():
 
     async with sessionmanager.session() as session:
         latest = await session.scalar(
-            select(Block).order_by(desc(Block.height))
+            select(Block).order_by(desc(Block.height)).limit(1)
         )
 
         if not latest:
@@ -254,21 +123,23 @@ async def sync_chain():
 
             await session.commit()
 
-        # while (
-        #     latest.hash
-        #     != (await client.make_request("getblockhash", [latest.height]))[
-        #         "result"
-        #     ]
-        # ):
-        #     print(f"Found reorg at height #{latest.height}")
+        while True:
+            latest_hash_data = await make_request(
+                settings.backend.node,
+                {
+                    "id": "info",
+                    "method": "getblockhash",
+                    "params": [latest.height],
+                },
+            )
 
-        #     reorg_block = latest
-        #     latest = await get_block_by_height(
-        #         session, height=(latest.height - 1)
-        #     )
+            if latest.blockhash == latest_hash_data["result"]:
+                break
 
-        #     await session.delete(reorg_block)
-        #     await session.commit()
+            print(f"Found reorg at height #{latest.height}")
+
+            latest = await process_reorg(session, latest)
+            await session.commit()
 
         chain_data = await make_request(
             settings.backend.node,
@@ -276,7 +147,7 @@ async def sync_chain():
         )
 
         chain_blocks = chain_data["result"]["blocks"]
-        display_log = (latest.height + 10) > chain_blocks
+        display_log = (chain_blocks - latest.height) < 100
 
         for height in range(latest.height + 1, chain_blocks + 1):
             try:
