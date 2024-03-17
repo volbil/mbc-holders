@@ -4,11 +4,13 @@ from app.database import sessionmanager
 from app.settings import get_settings
 from app.parser import make_request
 from datetime import datetime
+from decimal import Decimal
 from pprint import pprint
 import asyncio
 
 from app.models import (
     Transaction,
+    Address,
     Output,
     Block,
     Input,
@@ -126,7 +128,7 @@ async def parse_transactions(txids: list[str]):
         if input_output["address"] not in movements:
             movements[input_output["address"]] = 0
 
-        movements[output["address"]] -= input_output["amount"]
+        movements[input_output["address"]] -= input_output["amount"]
 
     movements = {key: value for key, value in movements.items() if value != 0.0}
 
@@ -213,6 +215,23 @@ async def process_block(session: AsyncSession, data: dict):
         .values(spent=True)
     )
 
+    # Get list of addresses involved in block transactions
+    movement_addresses = list(data["block"]["movements"].keys())
+
+    # Get existing addresses from database
+    cache = await session.scalars(
+        select(Address).filter(Address.address.in_(movement_addresses))
+    )
+
+    addresses_cache = {entry.address: entry for entry in cache}
+
+    for raw_address in movement_addresses:
+        if not (address := addresses_cache.get(raw_address)):
+            address = Address(**{"address": raw_address, "balance": Decimal(0)})
+
+        address.balance += Decimal(data["block"]["movements"][address.address])
+        session.add(address)
+
     return block
 
 
@@ -233,7 +252,7 @@ async def sync_chain():
 
             latest = await process_block(session, block_data)
 
-            # await session.commit()
+            await session.commit()
 
         # while (
         #     latest.hash
@@ -251,24 +270,31 @@ async def sync_chain():
         #     await session.delete(reorg_block)
         #     await session.commit()
 
-        # chain_data = (await client.make_request("getblockchaininfo"))["result"]
-        # display_log = (latest.height + 10) > chain_data["blocks"]
+        chain_data = await make_request(
+            settings.backend.node,
+            {"id": "info", "method": "getblockchaininfo", "params": []},
+        )
 
-        # for height in range(latest.height + 1, chain_data["blocks"] + 1):
-        #     try:
-        #         if display_log:
-        #             print(f"Processing block #{height}")
-        #         else:
-        #             if height % 100 == 0:
-        #                 print(f"Processing block #{height}")
+        chain_blocks = chain_data["result"]["blocks"]
+        display_log = (latest.height + 10) > chain_blocks
 
-        #         block_data = await parse_block(height)
+        for height in range(latest.height + 1, chain_blocks + 1):
+            try:
+                if display_log:
+                    print(f"Processing block #{height}")
+                else:
+                    if height % 100 == 0:
+                        print(f"Processing block #{height}")
 
-        #         await process_block(session, block_data)
+                block_data = await parse_block(height)
 
-        #     except KeyboardInterrupt:
-        #         print("Keyboard interrupt")
-        #         break
+                await process_block(session, block_data)
+
+                await session.commit()
+
+            except KeyboardInterrupt:
+                print("Keyboard interrupt")
+                break
 
     await sessionmanager.close()
 
