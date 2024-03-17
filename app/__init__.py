@@ -35,6 +35,10 @@ def create_app(init_db: bool = True) -> FastAPI:
         allow_headers=["*"],
     )
 
+    from .frontend import router as frontend_router
+
+    app.include_router(frontend_router)
+
     @app.get("/ping")
     async def ping_pong():
         return "pong"

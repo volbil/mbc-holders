@@ -698,6 +698,24 @@ MarkupSafe = ">=2.0"
 i18n = ["Babel (>=2.7)"]
 
 [[package]]
+name = "jinja2-fragments"
+version = "1.3.0"
+description = "Render Jinja2 template block as HTML page fragments on Python web frameworks."
+optional = false
+python-versions = "*"
+files = [
+    {file = "jinja2_fragments-1.3.0-py3-none-any.whl", hash = "sha256:b3ae600b79634ee465bab48a88a6c62d231a087725ce80127eb5da7e94838b94"},
+    {file = "jinja2_fragments-1.3.0.tar.gz", hash = "sha256:e72009b5eb920f2063946ac46f3e2b1e312e62a44397a448a1bdfcef0838287d"},
+]
+
+[package.dependencies]
+jinja2 = ">=3.1.0"
+
+[package.extras]
+dev = ["pre-commit"]
+tests = ["fastapi", "flask (>=2.1.0)", "litestar[standard]", "pytest", "pytest-asyncio", "quart (>=0.18.0)", "sanic", "sanic-ext", "sanic-testing", "starlette[full]"]
+
+[[package]]
 name = "mako"
 version = "1.3.2"
 description = "A super-fast templating language that borrows the best ideas from the existing templating languages."
@@ -1769,4 +1787,4 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.11"
-content-hash = "5b7172e69381131e9f50189be3f4743a10d11c6e3b59a271cbe8acc7069fc095"
+content-hash = "2bf5b87ca835f6aa865de09ad730a1bc3eca30e869c6fedbf9c35596320ce717"

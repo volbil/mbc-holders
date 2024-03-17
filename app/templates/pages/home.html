@@ -1,0 +1,36 @@
+{% extends "layout/base.html" %}
+
+{% block content %}
+
+<div class="card mb-3">
+    <div class="table-responsive">
+        <table id="blocks-table" class="table table-borderless table-md table-striped text-center mb-0">
+            <thead>
+                <tr>
+                    <th scope="col">Position</th>
+                    <th scope="col">Address</th>
+                    <th scope="col">Balance</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for address in addresses %}
+                <tr>
+                    <td>
+                        {{ loop.index * page }}
+                    </td>
+                    <td>
+                        <a href="https://microbitcoinorg.github.io/explorer/#/address/{{ address.address }}" class="text-monospace">
+                            {{ address.address }}
+                        </a>
+                    </td>
+                    <td>
+                        <span class="text-monospace">{{ address.balance|amount }}</span> MBC
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% endblock %}

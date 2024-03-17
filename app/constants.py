@@ -1,2 +1,0 @@
-# Misc
-SEARCH_RESULT_LIMIT = 12
