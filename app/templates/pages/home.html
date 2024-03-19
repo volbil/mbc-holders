@@ -16,7 +16,7 @@
                 {% for address in addresses %}
                 <tr>
                     <td>
-                        {{ loop.index * page }}
+                        {{ loop.index + (100 * (page - 1)) }}
                     </td>
                     <td>
                         <a href="https://microbitcoinorg.github.io/explorer/#/address/{{ address.address }}" class="text-monospace">
@@ -32,5 +32,7 @@
         </table>
     </div>
 </div>
+
+{% include "elements/pagination.html" %}
 
 {% endblock %}
