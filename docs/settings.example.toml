@@ -1,3 +1,6 @@
 [default]
     [default.database]
-    endpoint = "postgresql+asyncpg://user:password@localhost:5432/boilerplate"
+    endpoint = "postgresql+asyncpg://user:password@localhost:5432/holders"
+
+    [default.backend]
+    node = "http://rpcuser:111111@127.0.0.1:6501/"

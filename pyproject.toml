@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "microbitcoin-richlist"
+name = "microbitcoin-holders"
 version = "0.1.0"
-description = "MicroBitcoin Richlist"
+description = "MicroBitcoin Holders"
 authors = ["volbil <volbilnexus@gmail.com>"]
 readme = "README.md"
 

@@ -5,9 +5,9 @@ import asyncio
 def init_scheduler():
     scheduler = AsyncIOScheduler()
 
-    # from app.sync import send_emails
+    from app.sync import sync_chain
 
-    # scheduler.add_job(send_emails, "interval", seconds=10)
+    scheduler.add_job(sync_chain, "interval", monutes=1)
     scheduler.start()
 
     try:

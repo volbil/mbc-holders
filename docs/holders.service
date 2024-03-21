@@ -1,0 +1,13 @@
+[Unit]
+Description=Uvicorn instance to serve holders list
+After=network.target
+
+[Service]
+User=username
+Group=www-data
+WorkingDirectory=/home/username/holders
+Environment="PATH=/home/username/holders/.venv/bin"
+ExecStart=/home/username/holders/.venv/bin/uvicorn run:app --port=7272
+
+[Install]
+WantedBy=multi-user.target
